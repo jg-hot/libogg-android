@@ -30,7 +30,7 @@ android {
                 arguments += "-DANDROID_STL=c++_shared"
                 arguments += "-DANDROID_SUPPORT_FLEXIBLE_PAGE_SIZES=ON"
 
-                arguments += "-DBUILD_SHARED_LIBS=OFF"
+                arguments += "-DBUILD_SHARED_LIBS=ON"
                 arguments += "-DINSTALL_DOCS=OFF"
                 arguments += "-DINSTALL_PKG_CONFIG_MODULE=OFF"
                 arguments += "-DINSTALL_CMAKE_PACKAGE_MODULE=OFF"
@@ -64,20 +64,6 @@ android {
     }
 }
 
-tasks.register<Copy>("copyPrefabHeaders") {
-    from("${project.projectDir.parentFile}/include")
-    include("**/*.h")
-    into("$projectDir/build/prefab/include")
-}
-
-tasks.register<Exec>(getTestTaskName()) {
-    commandLine("./ndk-test.sh")
-}
-
-tasks.named<Delete>("clean") {
-    delete.add(".cxx")
-}
-
 publishing {
     val githubPackagesUrl = "https://maven.pkg.github.com/jg-hot/libogg-android"
 
@@ -103,6 +89,20 @@ publishing {
             }
         }
     }
+}
+
+tasks.register<Copy>("copyPrefabHeaders") {
+    from("${project.projectDir.parentFile}/include")
+    include("**/*.h")
+    into("$projectDir/build/prefab/include")
+}
+
+tasks.register<Exec>(getTestTaskName()) {
+    commandLine("./ndk-test.sh")
+}
+
+tasks.named<Delete>("clean") {
+    delete.add(".cxx")
 }
 
 afterEvaluate {
