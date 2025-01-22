@@ -27,6 +27,7 @@ android {
         }
         externalNativeBuild {
             cmake {
+                arguments += "-DANDROID_STL=c++_shared"
                 arguments += "-DANDROID_SUPPORT_FLEXIBLE_PAGE_SIZES=ON"
 
                 arguments += "-DBUILD_SHARED_LIBS=OFF"
@@ -40,7 +41,7 @@ android {
 
     externalNativeBuild {
         cmake {
-            path = file("${project.projectDir.parentFile}/CMakeLists.txt")
+            path = file("${projectDir.parentFile}/CMakeLists.txt")
             version = libs.versions.cmake.get()
         }
     }
@@ -51,7 +52,7 @@ android {
 
     prefab {
         create(project.name) {
-            headers = "${project.projectDir.parentFile}/include"
+            headers = "$projectDir/build/prefab/include"
         }
     }
 
@@ -63,6 +64,12 @@ android {
     }
 }
 
+tasks.register<Copy>("copyPrefabHeaders") {
+    from("${project.projectDir.parentFile}/include")
+    include("**/*.h")
+    into("$projectDir/build/prefab/include")
+}
+
 tasks.register<Exec>(getTestTaskName()) {
     commandLine("./ndk-test.sh")
 }
@@ -72,30 +79,52 @@ tasks.named<Delete>("clean") {
 }
 
 publishing {
+    val githubPackagesUrl = "https://maven.pkg.github.com/jg-hot/libogg-android"
+
     repositories {
-        mavenLocal()
+        maven {
+            url = uri(githubPackagesUrl)
+            credentials {
+                username = properties["gpr.user"]?.toString()
+                password = properties["gpr.key"]?.toString()
+            }
+        }
     }
 
     publications {
         create<MavenPublication>(project.name) {
-            artifact("${project.projectDir}/build/outputs/aar/${project.name}-release.aar")
+            artifact("$projectDir/build/outputs/aar/${project.name}-release.aar")
             artifactId = "${project.name}-android"
+
+            pom {
+                distributionManagement {
+                    downloadUrl = githubPackagesUrl
+                }
+            }
         }
     }
 }
 
 afterEvaluate {
-    tasks.named("preBuild").configure {
+    tasks.named("preBuild") {
         mustRunAfter("clean")
     }
-    tasks.named(getTestTaskName()).configure {
+
+    tasks.named("copyPrefabHeaders") {
+        mustRunAfter("externalNativeBuildRelease")
+    }
+    tasks.named("prefabReleaseConfigurePackage") {
+        dependsOn("copyPrefabHeaders")
+    }
+
+    tasks.named(getTestTaskName()) {
         dependsOn("clean", "assembleRelease")
     }
 
     tasks.named("generatePomFileFor${project.name.cap()}Publication") {
         mustRunAfter("assembleRelease")
     }
-    tasks.named("publishToMavenLocal").configure {
+    tasks.named("publish") {
         dependsOn("clean", "assembleRelease")
     }
 
@@ -118,8 +147,6 @@ afterEvaluate {
 }
 
 fun getTestTaskName(): String = "ndkTest"
-
-fun isTestBuild(): Boolean = gradle.startParameter.taskNames.contains(getTestTaskName())
 
 // capitalize the first letter to make task names matched when written in camel case
 fun String.cap(): String = this.replaceFirstChar { it.uppercase() }
