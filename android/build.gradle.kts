@@ -13,6 +13,8 @@ plugins {
 project.group = "org.xiph"
 project.version = "1.3.5-android-r1"
 
+val abis = listOf("armeabi-v7a", "arm64-v8a", "x86", "x86_64")
+
 android {
     namespace = "${project.group}.${project.name}"
     compileSdk = libs.versions.compilesdk.get().toInt()
@@ -23,7 +25,7 @@ android {
         buildToolsVersion = libs.versions.buildtools.get()
         ndkVersion = libs.versions.ndk.get()
         ndk {
-            abiFilters += listOf("armeabi-v7a", "arm64-v8a", "x86", "x86_64")
+            abiFilters += abis
         }
         externalNativeBuild {
             cmake {
@@ -45,22 +47,53 @@ android {
             version = libs.versions.cmake.get()
         }
     }
+}
 
-    buildFeatures {
-        prefabPublishing = true
+tasks.register<Zip>("prefabAar") {
+    archiveFileName = "${project.name}-release.aar"
+    destinationDirectory = file("build/outputs/prefab-aar")
+
+    from("aar-template")
+    from("${projectDir.parentFile}/include") {
+        include("**/*.h")
+        into("prefab/modules/${project.name}/include")
     }
-
-    prefab {
-        create(project.name) {
-            headers = "$projectDir/build/prefab/include"
+    abis.forEach { abi ->
+        from("build/intermediates/cmake/release/obj/$abi") {
+            include("*.so")
+            exclude("libc++_shared.so")
+            into("prefab/modules/${project.name}/libs/android.$abi")
         }
     }
+}
 
-    packaging {
-        // avoids duplicating libs in .aar due to using prefab
-        jniLibs {
-            excludes += "**/*"
-        }
+tasks.register<Exec>(getTestTaskName()) {
+    commandLine("./ndk-test.sh")
+}
+
+tasks.named<Delete>("clean") {
+    delete.add(".cxx")
+}
+
+afterEvaluate {
+    tasks.named("preBuild") {
+        mustRunAfter("clean")
+    }
+
+    tasks.named("prefabAar") {
+        dependsOn("externalNativeBuildRelease")
+    }
+
+    tasks.named("generatePomFileFor${project.name.cap()}Publication") {
+        mustRunAfter("prefabAar")
+    }
+
+    tasks.named("publish") {
+        dependsOn("clean", "prefabAar")
+    }
+
+    tasks.named(getTestTaskName()) {
+        dependsOn("clean", "externalNativeBuildRelease")
     }
 }
 
@@ -79,68 +112,13 @@ publishing {
 
     publications {
         create<MavenPublication>(project.name) {
-            artifact("$projectDir/build/outputs/aar/${project.name}-release.aar")
+            artifact("build/outputs/prefab-aar/${project.name}-release.aar")
             artifactId = "${project.name}-android"
 
             pom {
                 distributionManagement {
                     downloadUrl = githubPackagesUrl
                 }
-            }
-        }
-    }
-}
-
-tasks.register<Copy>("copyPrefabHeaders") {
-    from("${project.projectDir.parentFile}/include")
-    include("**/*.h")
-    into("$projectDir/build/prefab/include")
-}
-
-tasks.register<Exec>(getTestTaskName()) {
-    commandLine("./ndk-test.sh")
-}
-
-tasks.named<Delete>("clean") {
-    delete.add(".cxx")
-}
-
-afterEvaluate {
-    tasks.named("preBuild") {
-        mustRunAfter("clean")
-    }
-
-    tasks.named("copyPrefabHeaders") {
-        mustRunAfter("externalNativeBuildRelease")
-    }
-    tasks.named("prefabReleaseConfigurePackage") {
-        dependsOn("copyPrefabHeaders")
-    }
-
-    tasks.named(getTestTaskName()) {
-        dependsOn("clean", "assembleRelease")
-    }
-
-    tasks.named("generatePomFileFor${project.name.cap()}Publication") {
-        mustRunAfter("assembleRelease")
-    }
-    tasks.named("publish") {
-        dependsOn("clean", "assembleRelease")
-    }
-
-    // suggests running ":ndkTest" task instead of default testing tasks
-    listOf(
-        "check",
-        "test",
-        "testDebugUnitTest",
-        "testReleaseUnitTest",
-        "connectedCheck",
-        "connectedAndroidTest",
-        "connectedDebugAndroidTest",
-    ).forEach {
-        tasks.named(it) {
-            doLast {
-                println(":$it task not supported; use :${getTestTaskName()} to run tests via adb")
             }
         }
     }
